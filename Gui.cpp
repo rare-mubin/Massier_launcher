@@ -7,7 +7,7 @@
 #define IDC_SEARCH 101
 #define IDC_LISTBOX 102
 
-LauncherGUI::LauncherGUI(AppLauncher* appLauncher) : launcher(appLauncher), hwnd(NULL), searchBox(NULL), listBox(NULL), oldEditProc(NULL), oldListProc(NULL), isVisible(false) {}
+LauncherGUI::LauncherGUI(AppLauncher* appLauncher) : launcher(appLauncher), hwnd(NULL), searchBox(NULL), listBox(NULL), oldEditProc(NULL), oldListProc(NULL), isVisible(false), isResetting(false) {}
 
 LRESULT CALLBACK LauncherGUI::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     LauncherGUI* gui = NULL;
@@ -22,6 +22,11 @@ LRESULT CALLBACK LauncherGUI::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LP
     
     if (gui) {
         switch (uMsg) {
+            case WM_RESET_DONE:
+                gui->Show();
+                gui->isResetting = false;
+                return 0;
+
             case WM_CREATE:
                 gui->OnCreate(hwnd);
                 return 0;
@@ -101,8 +106,12 @@ LRESULT CALLBACK LauncherGUI::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LP
                 else if (wParam == VK_RETURN) {
                     int current = (int)SendMessage(gui->listBox, LB_GETCURSEL, 0, 0);
                     if (current != LB_ERR) {
+                        WCHAR itemText[256] = {0};
+                        SendMessage(gui->listBox, LB_GETTEXT, current, (LPARAM)itemText);
                         gui->OnItemSelected();
-                        gui->Hide();
+                        if (wcscmp(itemText, L"reset  -  Rescan All Apps") != 0) {
+                            gui->Hide();
+                        }
                     }
                     SetFocus(gui->searchBox);
                     return 0;
@@ -115,7 +124,9 @@ LRESULT CALLBACK LauncherGUI::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LP
             
             case WM_ACTIVATE:
                 if (LOWORD(wParam) == WA_INACTIVE) {
-                    gui->Hide();
+                    if (!gui->isResetting) {
+                        gui->Hide();
+                    }
                 }
                 return 0;
             
@@ -202,7 +213,12 @@ LRESULT CALLBACK LauncherGUI::EditSubclassProc(HWND hwnd, UINT uMsg, WPARAM wPar
                 int current = (int)SendMessage(gui->listBox, LB_GETCURSEL, 0, 0);
                 if (current != LB_ERR) {
                     gui->OnItemSelected();
-                    gui->Hide();
+                    // Only hide if it wasn't the reset command (reset clears the box itself)
+                    WCHAR itemText[256] = {0};
+                    SendMessage(gui->listBox, LB_GETTEXT, current, (LPARAM)itemText);
+                    if (wcscmp(itemText, L"reset  -  Rescan All Apps") != 0) {
+                        gui->Hide();
+                    }
                 }
                 return 0;
             }
@@ -313,6 +329,18 @@ void LauncherGUI::OnCreate(HWND hwnd) {
     SetFocus(searchBox);
 }
 
+void LauncherGUI::ResetAndRefresh() {
+    // Hide the launcher while scanning
+    isResetting = true;
+    Hide();
+
+    // Rescan all apps
+    launcher->Reset();
+
+    // Post a message to show the launcher after the message queue settles
+    PostMessage(hwnd, WM_RESET_DONE, 0, 0);
+}
+
 void LauncherGUI::OnSearch() {
     WCHAR buffer[256] = {0};
     int len = GetWindowText(searchBox, buffer, 256);
@@ -393,6 +421,42 @@ void LauncherGUI::OnSearch() {
             }
         }
         
+        // Check if input is "reset" command
+        std::wstring inputLower = input;
+        std::transform(inputLower.begin(), inputLower.end(), inputLower.begin(), ::towlower);
+        if (inputLower == L"reset") {
+            SendMessage(listBox, LB_RESETCONTENT, 0, 0);
+            SendMessage(listBox, LB_ADDSTRING, 0, (LPARAM)L"reset  -  Rescan All Apps");
+            ShowWindow(listBox, SW_SHOW);
+            SendMessage(listBox, LB_SETCURSEL, 0, 0);
+
+            int itemHeight = (int)SendMessage(listBox, LB_GETITEMHEIGHT, 0, 0);
+            int listHeight = itemHeight + 6;
+
+            RECT rect;
+            GetWindowRect(hwnd, &rect);
+            int windowWidth = rect.right - rect.left;
+
+            RECT clientRect;
+            GetClientRect(hwnd, &clientRect);
+            int frameHeight = (rect.bottom - rect.top) - clientRect.bottom;
+            int controlWidth = 380;
+            int leftMargin = (clientRect.right - controlWidth) / 2;
+
+            SetWindowPos(hwnd, NULL, 0, 0, windowWidth, 45 + listHeight + 10 + frameHeight, SWP_NOMOVE | SWP_NOZORDER);
+            SetWindowPos(listBox, NULL, leftMargin, 52, controlWidth, listHeight, SWP_NOZORDER);
+
+            HDC hdc = GetDC(hwnd);
+            HPEN hPen = CreatePen(PS_SOLID, 2, RGB(60, 60, 60));
+            HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
+            MoveToEx(hdc, leftMargin, 50, NULL);
+            LineTo(hdc, leftMargin + controlWidth, 50);
+            SelectObject(hdc, hOldPen);
+            DeleteObject(hPen);
+            ReleaseDC(hwnd, hdc);
+            return;
+        }
+
         // Normal app search
         launcher->FilterApps(buffer);
         UpdateList();
@@ -402,6 +466,12 @@ void LauncherGUI::OnSearch() {
 void LauncherGUI::OnItemSelected() {
     int index = (int)SendMessage(listBox, LB_GETCURSEL, 0, 0);
     if (index != LB_ERR) {
+        WCHAR itemText[256] = {0};
+        SendMessage(listBox, LB_GETTEXT, index, (LPARAM)itemText);
+        if (wcscmp(itemText, L"reset  -  Rescan All Apps") == 0) {
+            ResetAndRefresh();
+            return;
+        }
         launcher->LaunchApp(index);
     }
 }

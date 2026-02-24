@@ -61,15 +61,13 @@ Notes:
 
 ## Troubleshooting
 
-- If unable to find newlly added apps
+- If unable to find newly added apps, use the built-in rescan feature:
 
-```powershell
-.\restartAPP.bat
-```
+  Open the launcher (`Alt+Space`), type `reset`, and press `Enter`.
 
 ## Version
 
-Current version: **v1.0**
+Current version: **v1.01**
 
 
 ## License

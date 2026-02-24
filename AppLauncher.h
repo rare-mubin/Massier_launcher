@@ -27,4 +27,5 @@ public:
     const std::vector<App>& GetFilteredApps() const;
     bool LaunchApp(int index);
     int GetFilteredCount() const;
+    void Reset();
 };

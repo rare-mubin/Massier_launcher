@@ -292,3 +292,39 @@ bool AppLauncher::LaunchApp(int index) {
 int AppLauncher::GetFilteredCount() const {
     return (int)filteredApps.size();
 }
+
+void AppLauncher::Reset() {
+    // Release all stored IShellItem pointers before clearing
+    for (auto& app : allApps) {
+        if (app.item) {
+            app.item->Release();
+            app.item = nullptr;
+        }
+    }
+    allApps.clear();
+    filteredApps.clear();
+
+    CoInitialize(NULL);
+
+    WCHAR path[MAX_PATH];
+
+    if (SHGetFolderPathW(NULL, CSIDL_COMMON_PROGRAMS, NULL, 0, path) == S_OK)
+        ScanStartMenu(path);
+
+    if (SHGetFolderPathW(NULL, CSIDL_PROGRAMS, NULL, 0, path) == S_OK)
+        ScanStartMenu(path);
+
+    ScanAppsFolder();
+
+    std::sort(allApps.begin(), allApps.end(), [](const App& a, const App& b) {
+        return a.name < b.name;
+    });
+
+    allApps.erase(std::unique(allApps.begin(), allApps.end(), [](const App& a, const App& b) {
+        return a.name == b.name;
+    }), allApps.end());
+
+    filteredApps = allApps;
+
+    CoUninitialize();
+}

@@ -6,6 +6,7 @@
 #include "AppLauncher.h"
 
 #define WM_TRAYICON (WM_USER + 1)
+#define WM_RESET_DONE (WM_USER + 2)
 #define HOTKEY_ID 1
 
 class LauncherGUI {
@@ -17,6 +18,7 @@ private:
     WNDPROC oldEditProc;
     WNDPROC oldListProc;
     bool isVisible;
+    bool isResetting;
     
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -26,6 +28,7 @@ private:
     void OnItemSelected();
     void UpdateList();
     void ToggleVisibility();
+    void ResetAndRefresh();
     double EvaluateExpression(const std::wstring& expr);
 
 public:
