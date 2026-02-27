@@ -155,10 +155,20 @@ LRESULT CALLBACK LauncherGUI::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LP
                     WCHAR text[256];
                     SendMessage(pDIS->hwndItem, LB_GETTEXT, pDIS->itemID, (LPARAM)text);
                     
+                    // Draw app icon on the right side if available
+                    const auto& filtered = gui->launcher->GetFilteredApps();
+                    int iconSize = 20;
+                    int iconX = pDIS->rcItem.right - 8 - iconSize;
+                    int iconY = pDIS->rcItem.top + (pDIS->rcItem.bottom - pDIS->rcItem.top - iconSize) / 2;
+                    if ((size_t)pDIS->itemID < filtered.size() && filtered[pDIS->itemID].icon) {
+                        DrawIconEx(pDIS->hDC, iconX, iconY, filtered[pDIS->itemID].icon,
+                                   iconSize, iconSize, 0, NULL, DI_NORMAL);
+                    }
+
                     // Add padding to the text area
                     RECT textRect = pDIS->rcItem;
-                    textRect.left += 10;  // Left padding
-                    textRect.right -= 10; // Right padding
+                    textRect.left += 10;                    // Left padding
+                    textRect.right -= 8 + iconSize + 6;    // Right padding to avoid icon
                     
                     DrawText(pDIS->hDC, text, -1, &textRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
                     

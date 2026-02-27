@@ -22,9 +22,13 @@ AppLauncher::AppLauncher() {
         return a.name < b.name;
     });
 
-    allApps.erase(std::unique(allApps.begin(), allApps.end(), [](const App& a, const App& b) {
+    auto newEnd = std::unique(allApps.begin(), allApps.end(), [](const App& a, const App& b) {
         return a.name == b.name;
-    }), allApps.end());
+    });
+    // Destroy icons of duplicates before erasing
+    for (auto it = newEnd; it != allApps.end(); ++it)
+        if (it->icon) { DestroyIcon(it->icon); it->icon = nullptr; }
+    allApps.erase(newEnd, allApps.end());
 
     filteredApps = allApps;
     
@@ -109,7 +113,11 @@ void AppLauncher::ScanStartMenu(const std::wstring& folder) {
                                         if (ext == L".exe" || ext == L".bat" || ext == L".cmd") {
                                             std::wstring displayName = name;
                                             if (displayName.size() > 4) displayName = displayName.substr(0, displayName.size() - 4);
-                                            allApps.push_back({displayName, path, L"", nullptr});
+                                            HICON hIcon = nullptr;
+                                            SHFILEINFOW sfi = {0};
+                                            if (SHGetFileInfoW(path.c_str(), 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_SMALLICON))
+                                                hIcon = sfi.hIcon;
+                                            allApps.push_back({displayName, path, L"", nullptr, hIcon});
                                         }
                                     }
                                 }
@@ -165,7 +173,49 @@ void AppLauncher::ScanAppsFolder() {
                 CoTaskMemFree(pszPath);
             }
 
-            allApps.push_back({appName, filePath, appId, pItem});
+            HICON hIcon = nullptr;
+
+            // Use IShellItemImageFactory for UWP/Store apps — correctly renders package PNG assets
+            IShellItemImageFactory* pImgFactory = nullptr;
+            if (SUCCEEDED(pItem->QueryInterface(IID_PPV_ARGS(&pImgFactory)))) {
+                SIZE sz = {20, 20};
+                HBITMAP hBmp = nullptr;
+                if (SUCCEEDED(pImgFactory->GetImage(sz, SIIGBF_RESIZETOFIT | SIIGBF_ICONONLY, &hBmp))) {
+                    ICONINFO ii = {};
+                    ii.fIcon  = TRUE;
+                    ii.hbmColor = hBmp;
+                    ii.hbmMask  = CreateBitmap(20, 20, 1, 1, nullptr);
+                    hIcon = CreateIconIndirect(&ii);
+                    DeleteObject(ii.hbmMask);
+                    DeleteObject(hBmp);
+                }
+                // Fallback: try without SIIGBF_ICONONLY (some apps need SIIGBF_THUMBNAILONLY)
+                if (!hIcon) {
+                    if (SUCCEEDED(pImgFactory->GetImage(sz, SIIGBF_RESIZETOFIT, &hBmp))) {
+                        ICONINFO ii = {};
+                        ii.fIcon    = TRUE;
+                        ii.hbmColor = hBmp;
+                        ii.hbmMask  = CreateBitmap(20, 20, 1, 1, nullptr);
+                        hIcon = CreateIconIndirect(&ii);
+                        DeleteObject(ii.hbmMask);
+                        DeleteObject(hBmp);
+                    }
+                }
+                pImgFactory->Release();
+            }
+
+            // Final fallback: PIDL via SHGetFileInfo
+            if (!hIcon) {
+                SHFILEINFOW sfi2 = {0};
+                PIDLIST_ABSOLUTE pidlIcon = nullptr;
+                if (SUCCEEDED(SHGetIDListFromObject(pItem, &pidlIcon))) {
+                    if (SHGetFileInfoW((LPCWSTR)pidlIcon, 0, &sfi2, sizeof(sfi2), SHGFI_ICON | SHGFI_SMALLICON | SHGFI_PIDL))
+                        hIcon = sfi2.hIcon;
+                    ILFree(pidlIcon);
+                }
+            }
+
+            allApps.push_back({appName, filePath, appId, pItem, hIcon});
         } else {
             pItem->Release();
         }
@@ -294,12 +344,10 @@ int AppLauncher::GetFilteredCount() const {
 }
 
 void AppLauncher::Reset() {
-    // Release all stored IShellItem pointers before clearing
+    // Release all stored IShellItem pointers and icons before clearing
     for (auto& app : allApps) {
-        if (app.item) {
-            app.item->Release();
-            app.item = nullptr;
-        }
+        if (app.item) { app.item->Release(); app.item = nullptr; }
+        if (app.icon) { DestroyIcon(app.icon); app.icon = nullptr; }
     }
     allApps.clear();
     filteredApps.clear();
@@ -320,9 +368,12 @@ void AppLauncher::Reset() {
         return a.name < b.name;
     });
 
-    allApps.erase(std::unique(allApps.begin(), allApps.end(), [](const App& a, const App& b) {
+    auto newEndR = std::unique(allApps.begin(), allApps.end(), [](const App& a, const App& b) {
         return a.name == b.name;
-    }), allApps.end());
+    });
+    for (auto it = newEndR; it != allApps.end(); ++it)
+        if (it->icon) { DestroyIcon(it->icon); it->icon = nullptr; }
+    allApps.erase(newEndR, allApps.end());
 
     filteredApps = allApps;
 

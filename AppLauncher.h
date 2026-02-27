@@ -11,6 +11,7 @@ struct App {
     std::wstring path;
     std::wstring appId;
     IShellItem* item;  // For AppsFolder items
+    HICON icon;        // Small app icon for display
 };
 
 class AppLauncher {

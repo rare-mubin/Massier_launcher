@@ -67,7 +67,7 @@ Notes:
 
 ## Version
 
-Current version: **v1.01**
+Current version: **v1.02**
 
 
 ## License
